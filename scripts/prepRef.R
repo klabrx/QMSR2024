@@ -1,38 +1,60 @@
 # ./scripts/prepRef.R
 
-# Benötigte Pakete laden
+# Laden der erforderlichen Bibliotheken
 library(dplyr)
+library(sf)
 
-# Schritt 1: Daten laden
-# Laden der Referenztabelle für Größen
-ref_groesse <- read.csv("./MSR/data/RefTab_Groesse.csv", sep = ";", stringsAsFactors = FALSE)
-
-# Laden der Datei für Adressen (als RDS-Datei gespeichert)
-ref_adressen <- readRDS("./MSR/data/sf_data.RDS") 
-
-# Falls Sie die Daten aus einer RData-Datei laden möchten:
-# load("./data/adr_2024.RData")
-# ref_adressen <- sf_data
-
-# Schritt 2: Daten bereinigen
-# Tippfehler korrigieren in allen Spalten
-replace_typo <- function(df, old_value, new_value) {
-  df %>% mutate(across(everything(), ~ gsub(old_value, new_value, ., fixed = TRUE)))
+# Funktion zur Korrektur von Tippfehlern in allen Spalten
+typo_correction <- function(data) {
+  corrections <- list(
+    "Klosterwinl" = "Klosterwinkel"
+    # Hier können weitere Korrekturen hinzugefügt werden
+  )
+  
+  for (col in names(data)) {
+    for (wrong in names(corrections)) {
+      correct <- corrections[[wrong]]
+      data[[col]] <- gsub(wrong, correct, data[[col]], fixed = TRUE)
+    }
+  }
+  
+  return(data)
 }
 
-# Tippfehler korrigieren in ref_adressen
-ref_adressen <- replace_typo(ref_adressen, "Klosterwinl", "Klosterwinkel")
+# 1. Laden der Daten aus externen Dateien
 
-# Beispiel für weitere Bereinigungen, wenn erforderlich:
-# ref_adressen <- replace_typo(ref_adressen, "another_old_value", "correct_value")
+ref_adressen <- read_csv("data/adr2024.csv",
+col_types = cols(PLZ = col_character()))
 
-# Falls es eine Referenzdatei für Baujahresklassen gibt, laden und bereinigen:
-# ref_baujahr <- read.csv("./data/RefTab_Baujahr.csv", sep = ";", stringsAsFactors = FALSE)
-# ref_baujahr <- replace_typo(ref_baujahr, "old_value", "correct_value")
+# Korrigiere Tippfehler in allen Spalten
+ref_adressen <- typo_correction(ref_adressen)
 
-# Schritt 3: Speichern in einer RData-Datei
-# Speichern der bereinigten DataFrames
-save(ref_groesse, ref_adressen, file = "./MSR/data/ref.RData")
+# Erstelle die WL_FAKTOR-Spalte basierend auf der WL_2024-Spalte
+ref_adressen <- ref_adressen %>%
+  mutate(ADRESS_ID_KURZ = substr(ADRESS_ID, 6, nchar(ADRESS_ID))) %>%
+  arrange(STRASSE, ADRESS_ID_KURZ) %>%
+  select(-ADRESS_ID_KURZ) %>%
+  mutate(WL_FAKTOR = case_when(
+    WL_2024 == "A" ~ 0.00,
+    WL_2024 == "B" ~ -0.07,
+    WL_2024 == "C" ~ -0.10,
+    TRUE ~ NA_real_  # Falls kein passender Wert gefunden wird
+  ))
 
-# Falls ref_baujahr hinzugefügt wurde:
-# save(ref_groesse, ref_adressen, ref_baujahr, file = "./MSR/data/ref.RData")
+# 2. Laden und Aufbereiten der Größentabelle
+
+# Lade die Referenztabelle für Größen
+ref_groesse <- read.csv("./data/external/RefTab_Groesse.csv", sep = ";", stringsAsFactors = FALSE)
+
+# Konvertiere die Größenwerte von Komma zu Punkt für die korrekte numerische Verarbeitung
+ref_groesse <- ref_groesse %>%
+  mutate(
+    low = as.numeric(gsub(",", ".", low)),
+    med = as.numeric(gsub(",", ".", med)),
+    hi = as.numeric(gsub(",", ".", hi))
+  )
+
+# 3. Speichern aller Daten in einer RData-Datei
+
+# Speichern der vorbereiteten Daten in einer .RData-Datei
+save(ref_adressen, ref_groesse, file = "./data/ref.RData")
