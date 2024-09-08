@@ -1,19 +1,18 @@
 library(shiny)
 library(shinyjs)
 library(dplyr)
-library(readr)
 
 # Load the prepared data
 load("./data/ref.RData")
 
-# UI
+# Define UI
 ui <- fluidPage(
   useShinyjs(),
   
-  # External CSS
+  # Include external CSS
   includeCSS("styles/styles.css"),
   
-  # Header
+  # Fixed header
   div(id = "result-header", "Bestimmung der ortsüblichen Vergleichsmiete, qualifizierter Mietspiegel der Stadt Passau ab 2024"),
   
   # Main content
@@ -21,103 +20,127 @@ ui <- fluidPage(
       fluidRow(
         column(4, 
                h3("Angaben zur Wohnung"),
+               # Input field for apartment size
                numericInput("wohn_groesse_input", "Größe in m² lt. Mietvertrag", 
-                            value = NA, min = min(ref_groesse$low), 
-                            max = max(ref_groesse$hi), step = 0.1),
-               div(class = "hover-container",
-                   selectInput("adresse_input", "Adresse (zur Bestimmung der Wohnlage)", 
-                               choices = c("", ref_adressen$STRASSE_HS), 
-                               selected = NULL, 
-                               multiple = FALSE),
-                   div(class = "hover-text", "Bitte wählen Sie eine Adresse aus der Liste aus. Wenn die Adresse nicht vorhanden ist, überprüfen Sie die Schreibweise oder wenden Sie sich an den Support.")
-               )
+                            value = NULL, min = 15, 
+                            max = 150, step = 0.1),
+               # Dropdown field for address selection
+               selectInput("adresse_input", "Adresse (zur Bestimmung der Wohnlage)", 
+                           choices = c("", ref_adressen$STRASSE_HS), 
+                           selected = NULL, 
+                           multiple = FALSE)
         ),
         column(8, 
                h3("Ergebnis"),
+               # Dynamic report displayed with renderUI
                uiOutput("report_ui")
         )
       )
   ),
   
-  # Footer
+  # Fixed footer
   div(id = "result-footer", "Datenschutzerklärung | Impressum")
 )
 
-# Server
+# Define server logic
 server <- function(input, output, session) {
   
-  output$report_ui <- renderUI({
+  # Reactive expression to calculate results
+  results <- reactive({
+    req(input$wohn_groesse_input)
     
-    # Debug print statements
-    print(paste("Wohnungsgröße Input:", input$wohn_groesse_input))
-    print(paste("Adresse Input:", input$adresse_input))
+    # Initialize variables
+    von_adjusted <- med_adjusted <- bis_adjusted <- NA
+    von_adjusted_address <- med_adjusted_address <- bis_adjusted_address <- NA
     
-    # Initialize results
-    wohn_groesse_result <- "<p>Größenangabe fehlt bzw. nicht zwischen 25 bis unter 150 m²</p>"
-    von_adjusted <- med_adjusted <- bis_adjusted <- von_faktor <- med_faktor <- bis_faktor <- sum_von <- sum_med <- sum_bis <- nettokaltmiete_von <- nettokaltmiete_med <- nettokaltmiete_bis <- NA
-    
-    # Size calculation
-    if (!is.na(input$wohn_groesse_input) && input$wohn_groesse_input >= min(ref_groesse$low) && input$wohn_groesse_input <= max(ref_groesse$hi)) {
-      row <- ref_groesse[ref_groesse$low <= input$wohn_groesse_input & ref_groesse$hi > input$wohn_groesse_input, ]
+    # Check apartment size
+    if (!is.na(input$wohn_groesse_input) && input$wohn_groesse_input > 15 && input$wohn_groesse_input <= 150) {
+      row <- ref_groesse[ref_groesse$von <= input$wohn_groesse_input & ref_groesse$bis_unter > input$wohn_groesse_input, ]
       
       if (nrow(row) == 1) {
-        wohn_groesse_result <- paste0("von ", row$low, " bis unter ", row$hi, " m²")
-        von_adjusted <- round(row$low, 2)
-        med_adjusted <- round(row$med, 2)
-        bis_adjusted <- round(row$hi, 2)
-        
-        sum_von <- von_adjusted
-        sum_med <- med_adjusted
-        sum_bis <- bis_adjusted
+        von_adjusted <- row$low
+        med_adjusted <- row$med
+        bis_adjusted <- row$hi
       }
     }
     
-    # Address calculation
-    lage_result <- "<p>Adresse fehlt, Lagenbestimmung nicht möglich</p>"
-    adresse <- input$adresse_input
-    if (!is.null(adresse) && adresse != "" && !is.na(von_adjusted) && !is.na(med_adjusted) && !is.na(bis_adjusted)) {
-      adresse_row <- ref_adressen[ref_adressen$STRASSE_HS == adresse, ]
+    # Check address and factor
+    if (!is.null(input$adresse_input) && input$adresse_input != "") {
+      address_row <- ref_adressen %>% filter(STRASSE_HS == input$adresse_input)
       
-      if (nrow(adresse_row) == 1) {
-        wohnlage <- as.character(adresse_row$WL_2024)
-        lagenfaktor <- adresse_row$WL_FAKTOR
-        
-        lage_result <- paste0(adresse, " (WL: ", wohnlage, ", ", 
-                              ifelse(lagenfaktor == 0, "±0%", 
-                                     ifelse(lagenfaktor > 0, paste0("+", lagenfaktor * 100, "%"), paste0(lagenfaktor * 100, "%"))), ")")
-        
-        # Calculate adjusted values
-        von_faktor <- round(von_adjusted * lagenfaktor, 2)
-        med_faktor <- round(med_adjusted * lagenfaktor, 2)
-        bis_faktor <- round(bis_adjusted * lagenfaktor, 2)
-        
-        # Sum up values
-        sum_von <- sum_von + von_faktor
-        sum_med <- sum_med + med_faktor
-        sum_bis <- sum_bis + bis_faktor
+      if (nrow(address_row) == 1) {
+        factor <- address_row$WL_FAKTOR
+        von_adjusted_address <- round(von_adjusted * factor, 2)
+        med_adjusted_address <- round(med_adjusted * factor, 2)
+        bis_adjusted_address <- round(bis_adjusted * factor, 2)
+        address_text <- paste0(input$adresse_input, ", Wohnlage ", address_row$WL_2024, ", Abschlag ", round(factor * 100, 2), "%")
+      } else {
+        address_text <- "Adresse nicht gefunden"
+      }
+    } else {
+      address_text <- "Adresse fehlt"
+    }
+    
+    # Compute totals
+    ortsueblich_von <- round(sum(von_adjusted, von_adjusted_address, na.rm = TRUE), 2)
+    ortsueblich_med <- round(sum(med_adjusted, med_adjusted_address, na.rm = TRUE), 2)
+    ortsueblich_bis <- round(sum(bis_adjusted, bis_adjusted_address, na.rm = TRUE), 2)
+    
+    list(
+      von_adjusted = von_adjusted,
+      med_adjusted = med_adjusted,
+      bis_adjusted = bis_adjusted,
+      von_adjusted_address = von_adjusted_address,
+      med_adjusted_address = med_adjusted_address,
+      bis_adjusted_address = bis_adjusted_address,
+      address_text = address_text,
+      ortsueblich_von = ortsueblich_von,
+      ortsueblich_med = ortsueblich_med,
+      ortsueblich_bis = ortsueblich_bis
+    )
+  })
+  
+  # Render UI for the results table
+  output$report_ui <- renderUI({
+    res <- results()
+    
+    # Dynamically get the size range for the input size
+    size_row <- ref_groesse %>%
+      filter(von <= input$wohn_groesse_input & bis_unter > input$wohn_groesse_input)
+    
+    size_from <- if (nrow(size_row) > 0) size_row$von else "–"
+    size_to <- if (nrow(size_row) > 0) size_row$bis_unter else "–"
+    
+    # Format currency values
+    format_currency <- function(value) {
+      if (is.na(value) || value == "–") {
+        return("–")
+      } else {
+        return(formatC(value, format = "f", digits = 2, big.mark = ".", decimal.mark = ","))
       }
     }
     
-    # Calculate rent
-    if (!is.na(input$wohn_groesse_input) && !is.na(sum_von) && !is.na(sum_med) && !is.na(sum_bis)) {
-      nettokaltmiete_von <- round(sum_von * input$wohn_groesse_input, 2)
-      nettokaltmiete_med <- round(sum_med * input$wohn_groesse_input, 2)
-      nettokaltmiete_bis <- round(sum_bis * input$wohn_groesse_input, 2)
-    }
-    
-    # Generate results table
     HTML(paste0("<table class='table'>
-                 <tr><th>Merkmal</th><th>Angaben</th><th style='text-align: center;'>Von</th><th style='text-align: center;' class='highlight'>Ortsüblich</th><th style='text-align: center;'>Bis</th></tr>
-                 <tr><td>Wohnungsgröße</td><td>", wohn_groesse_result, "</td><td style='text-align: center;'>", 
-                von_adjusted, "</td><td style='text-align: center;' class='highlight'>", med_adjusted, "</td><td style='text-align: center;'>", bis_adjusted, "</td></tr>
-                 <tr><td>Lage</td><td>", lage_result, "</td><td style='text-align: center;'>", 
-                von_faktor, "</td><td style='text-align: center;' class='highlight'>", med_faktor, "</td><td style='text-align: center;'>", bis_faktor, "</td></tr>
-                 <tr><td colspan='2'><b>Ortsübliche Vergleichsmiete:</b></td><td style='text-align: center;'><b>", 
-                sum_von, "</b></td><td style='text-align: center;' class='highlight'><b>", sum_med, "</b></td><td style='text-align: center;'><b>", sum_bis, "</b></td></tr>
-                 <tr><td colspan='2'><b>Nettokaltmiete für die angegebenen ", input$wohn_groesse_input, " m²:</b></td><td style='text-align: center;'><b>", 
-                nettokaltmiete_von, "</b></td><td style='text-align: center;' class='highlight'><b>", nettokaltmiete_med, "</b></td><td style='text-align: center;'><b>", nettokaltmiete_bis, "</b></td></tr>
-                 </table>"))
+               <tr><th>Merkmal</th><th>Angaben</th><th style='text-align: center;'>Von</th><th style='text-align: center;' class='highlight'>Ortsüblich</th><th style='text-align: center;'>Bis</th></tr>
+               <tr><td>Wohnungsgröße</td><td>Von ", size_from, " bis unter ", size_to, " m²</td><td style='text-align: center;'>", 
+                format_currency(res$von_adjusted), "</td><td style='text-align: center;' class='highlight'>", 
+                format_currency(res$med_adjusted), "</td><td style='text-align: center;'>", 
+                format_currency(res$bis_adjusted), "</td></tr>
+               <tr><td>Adresse</td><td>", res$address_text, "</td><td style='text-align: center;'>", 
+                format_currency(res$von_adjusted_address), "</td><td style='text-align: center;' class='highlight'>", 
+                format_currency(res$med_adjusted_address), "</td><td style='text-align: center;'>", 
+                format_currency(res$bis_adjusted_address), "</td></tr>
+               <tr><td colspan='2'><b>Ortsübliche Vergleichsmiete:</b></td><td style='text-align: center;'>", 
+                format_currency(res$ortsueblich_von), "</td><td style='text-align: center;' class='highlight'>", 
+                format_currency(res$ortsueblich_med), "</td><td style='text-align: center;'>", 
+                format_currency(res$ortsueblich_bis), "</td></tr>
+               <tr><td colspan='2'><b>Nettokaltmiete für die angegebenen ", input$wohn_groesse_input, " m²:</b></td><td style='text-align: center;'>", 
+                format_currency(res$ortsueblich_von * input$wohn_groesse_input), "</td><td style='text-align: center;' class='highlight'>", 
+                format_currency(res$ortsueblich_med * input$wohn_groesse_input), "</td><td style='text-align: center;'>", 
+                format_currency(res$ortsueblich_bis * input$wohn_groesse_input), "</td></tr>
+               </table>"))
   })
+  
 }
 
 # Run the Shiny app
