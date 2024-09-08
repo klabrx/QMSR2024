@@ -1,0 +1,66 @@
+/* Fixierter Header */
+#result-header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 50px;
+  background-color: #007bff;
+  color: white;
+  text-align: center;
+  line-height: 50px;
+  z-index: 1000;
+}
+
+/* Hauptinhalt, um Platz für den fixierten Header zu schaffen */
+#main-content {
+  margin-top: 60px; /* Platz für den fixierten Header */
+}
+
+/* Fixierter Footer */
+#result-footer {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 50px;
+  background-color: #333;
+  color: white;
+  text-align: center;
+  line-height: 50px;
+  z-index: 1000;
+}
+
+
+/* Highlight für Med-Spalte */
+.highlight {
+  background-color: yellow;
+  font-weight: bold;
+}
+
+/* CSS für Hover-Effekte der Adresseingabe */
+.hover-container {
+  position: relative;
+  display: inline-block;
+  width: 100%; /* Optional: Sicherstellen, dass der Container die gesamte Breite des Eingabefeldes einnimmt */
+}
+
+.hover-text {
+  display: none;
+  position: absolute;
+  top: 100%; /* Zeigt den Tooltip unter dem Element an */
+  left: 0;
+  background-color: #fff9e6; /* Leicht gelber Hintergrund */
+  color: #333;
+  border: 1px solid #ddd;
+  padding: 5px;
+  z-index: 1;
+  white-space: normal; /* Erlaubt Textumbrüche */
+  max-width: 50vw; /* Maximale Breite auf 50% der Viewportbreite begrenzen */
+  word-wrap: break-word; /* Bricht lange Wörter um */
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1); /* Optional: fügt einen Schatten hinzu */
+}
+
+.hover-container:hover .hover-text {
+  display: block;
+}
