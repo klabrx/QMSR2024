@@ -3,6 +3,7 @@
 # Laden der erforderlichen Bibliotheken
 library(dplyr)
 library(sf)
+library(readr)
 
 # Funktion zur Korrektur von Tippfehlern in allen Spalten
 typo_correction <- function(data) {
@@ -54,7 +55,36 @@ ref_groesse <- ref_groesse %>%
     hi = as.numeric(gsub(",", ".", hi))
   )
 
+#  Erstelle ref_baujahr
+# Define year ranges and factors
+year_ranges <- c(
+  "bis 1918" = 0.00,
+  "1919 - 1945" = -0.07,
+  "1946 - 1977" = -0.10,
+  "1978 - 1984" = -0.05,
+  "1985 - 1989" = -0.01,
+  "1990 - 1995" = -0.01,
+  "1996 - 2004" = 0.06,
+  "2005 - 2012" = 0.12,
+  "2013 - 2018" = 0.19,
+  "2019 - 2023" = 0.24
+)
+
+# Convert to DataFrame
+ref_baujahr <- data.frame(
+  Baujahresklasse = names(year_ranges),
+  Faktor = as.numeric(year_ranges),
+  stringsAsFactors = FALSE
+)
+
+# Print the DataFrame to check
+print(ref_baujahr)
+
+
+
+
+
 # 3. Speichern aller Daten in einer RData-Datei
 
 # Speichern der vorbereiteten Daten in einer .RData-Datei
-save(ref_adressen, ref_groesse, file = "./data/ref.RData")
+save(ref_adressen, ref_groesse, ref_baujahr, file = "./data/ref.RData")
